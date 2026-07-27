@@ -16,6 +16,8 @@ const db = require("./db");
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// 링크 미리보기(썸네일/제목) 만들려고 자동으로 들어오는 봇들.
+// 사람이 실제로 클릭한 게 아니라서 클릭수에서 제외합니다.
 const BOT_UA_PATTERNS = [
   "kakaotalk",
   "naver",
@@ -39,8 +41,42 @@ function isBotRequest(userAgent) {
 }
 
 app.use(express.json());
+
+// ---------- 관리 화면 비밀번호 보호 ----------
+// /r/:code (블로그 독자가 클릭하는 리다이렉트)는 보호하지 않고,
+// 관리 화면(정적 파일 + API)만 비밀번호를 요구합니다.
+function requireAdminAuth(req, res, next) {
+  // /r/코드 링크는 블로그 독자가 클릭하는 공개 링크라 비밀번호 없이 통과시킴
+  if (req.path.startsWith("/r/")) {
+    return next();
+  }
+
+  const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
+
+  if (!ADMIN_PASSWORD) {
+    console.warn("⚠️ ADMIN_PASSWORD 환경변수가 없어서 관리 화면이 보호되지 않고 있어요.");
+    return next();
+  }
+
+  const authHeader = req.headers.authorization || "";
+  const [scheme, encoded] = authHeader.split(" ");
+
+  if (scheme === "Basic" && encoded) {
+    const decoded = Buffer.from(encoded, "base64").toString("utf-8");
+    const [, password] = decoded.split(":"); // 아이디는 아무거나 입력해도 됨, 비밀번호만 확인
+    if (password === ADMIN_PASSWORD) {
+      return next();
+    }
+  }
+
+  res.set("WWW-Authenticate", 'Basic realm="link-tracker admin"');
+  return res.status(401).send("비밀번호가 필요해요.");
+}
+
+app.use(requireAdminAuth);
 app.use(express.static(path.join(__dirname, "public")));
 
+// ---------- 링크 목록 조회 ----------
 app.get("/api/links", async (req, res) => {
   try {
     const list = await db.listLinks();
@@ -51,6 +87,7 @@ app.get("/api/links", async (req, res) => {
   }
 });
 
+// ---------- 새 링크 등록 ----------
 app.post("/api/links", async (req, res) => {
   const { targetUrl, label } = req.body;
 
@@ -68,6 +105,7 @@ app.post("/api/links", async (req, res) => {
   }
 });
 
+// ---------- 링크 삭제 ----------
 app.delete("/api/links/:code", async (req, res) => {
   try {
     await db.deleteLink(req.params.code);
@@ -78,6 +116,7 @@ app.delete("/api/links/:code", async (req, res) => {
   }
 });
 
+// ---------- 핵심: 클릭 발생 시 기록 후 실제 링크로 리다이렉트 ----------
 app.get("/r/:code", async (req, res) => {
   const ua = req.get("user-agent") || "(없음)";
 
