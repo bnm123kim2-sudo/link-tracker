@@ -10,8 +10,12 @@
 
 const express = require("express");
 const path = require("path");
+const multer = require("multer");
+const readXlsxFile = require("read-excel-file/node");
 const { nanoid } = require("nanoid");
 const db = require("./db");
+
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -76,11 +80,92 @@ function requireAdminAuth(req, res, next) {
 app.use(requireAdminAuth);
 app.use(express.static(path.join(__dirname, "public")));
 
+// ---------- 정산 엑셀 업로드: 1단계 - 헤더/미리보기 확인 ----------
+app.post("/api/sales/preview", upload.single("file"), async (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({ error: "엑셀 파일을 첨부해주세요." });
+  }
+
+  try {
+    const sheets = await readXlsxFile(req.file.buffer);
+    const rows = sheets[0].data; // 첫 번째 시트만 사용
+    if (!rows || rows.length < 2) {
+      return res.status(400).json({ error: "엑셀에 데이터가 없어요 (헤더 + 최소 1줄 필요)." });
+    }
+
+    const headers = rows[0].map((h) => String(h ?? ""));
+    const dataRows = rows.slice(1);
+
+    res.json({
+      headers,
+      sampleRows: dataRows.slice(0, 5),
+      totalRows: dataRows.length,
+      // 다음 단계(확정)에서 다시 쓸 수 있도록 전체 원본 행을 그대로 클라이언트에 돌려줌
+      allRows: dataRows,
+    });
+  } catch (err) {
+    console.error("엑셀 파싱 실패:", err.message);
+    res.status(400).json({ error: "엑셀 파일을 읽지 못했어요. .xlsx 형식인지 확인해주세요." });
+  }
+});
+
+// ---------- 정산 엑셀 업로드: 2단계 - 컬럼 매핑 확정 후 저장+매칭 ----------
+app.post("/api/sales/confirm", async (req, res) => {
+  const { rows, productCol, amountCol, dateCol } = req.body;
+
+  if (!Array.isArray(rows) || productCol === undefined || amountCol === undefined) {
+    return res.status(400).json({ error: "상품명/금액 컬럼을 선택해주세요." });
+  }
+
+  try {
+    const parsedRows = rows
+      .map((row) => ({
+        productName: row[productCol],
+        amount: Number(row[amountCol]),
+        saleDate: dateCol !== undefined && dateCol !== "" ? row[dateCol] : null,
+      }))
+      .filter((r) => r.productName && !Number.isNaN(r.amount));
+
+    const result = await db.importSales(parsedRows);
+    res.json(result);
+  } catch (err) {
+    console.error("매출 저장 실패:", err.message);
+    res.status(500).json({ error: "매출 데이터 저장에 실패했어요." });
+  }
+});
+
+// ---------- 링크별 매출 요약 + 미매칭 목록 ----------
+app.get("/api/sales/summary", async (req, res) => {
+  try {
+    const summary = await db.getSalesSummary();
+    res.json(summary);
+  } catch (err) {
+    console.error("매출 요약 조회 실패:", err.message);
+    res.status(500).json({ error: "매출 요약을 불러오지 못했어요." });
+  }
+});
+
+// ---------- 미매칭 판매건을 특정 링크에 수동 연결 ----------
+app.post("/api/sales/:saleId/assign", async (req, res) => {
+  const { code } = req.body;
+  if (!code) return res.status(400).json({ error: "연결할 링크 코드가 필요해요." });
+
+  try {
+    await db.assignSaleToLink(req.params.saleId, code);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("수동 매칭 실패:", err.message);
+    res.status(500).json({ error: "매칭에 실패했어요." });
+  }
+});
+
 // ---------- 링크 목록 조회 ----------
 app.get("/api/links", async (req, res) => {
   try {
     const list = await db.listLinks();
-    res.json(list);
+    const { revenueByCode } = await db.getSalesSummary();
+    const withRevenue = list.map((l) => ({ ...l, revenue: revenueByCode[l.code] || 0 }));
+    res.json(withRevenue);
   } catch (err) {
     console.error("링크 목록 조회 실패:", err.message);
     res.status(500).json({ error: "목록을 불러오지 못했어요. Supabase 연결 설정을 확인해주세요." });

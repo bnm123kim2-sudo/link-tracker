@@ -87,6 +87,48 @@
   </div>
 
   <div class="card">
+    <h2 style="font-size:15px;margin:0 0 8px;">📊 정산 엑셀 업로드</h2>
+    <p class="sub" style="margin:0 0 12px;">마이리얼트립 파트너스에서 다운받은 정산 엑셀을 올리면, 상품명을 기준으로 등록해둔 링크와 자동으로 매칭해서 매출을 보여드려요.</p>
+    <div class="row">
+      <input type="file" id="excelFile" accept=".xlsx,.xls" style="flex:1;" />
+      <button onclick="previewExcel()">업로드</button>
+    </div>
+    <div id="uploadMsg" class="msg"></div>
+
+    <div id="mappingSection" style="display:none; margin-top:16px;">
+      <p class="sub">어떤 칸이 상품명/금액/날짜인지 골라주세요 (미리보기 기준):</p>
+      <div class="row">
+        <div style="flex:1;">
+          <label class="sub">상품명 컬럼</label>
+          <select id="productColSelect" style="width:100%;padding:8px;background:#0f1115;color:var(--text);border:1px solid var(--border);border-radius:8px;"></select>
+        </div>
+        <div style="flex:1;">
+          <label class="sub">금액 컬럼</label>
+          <select id="amountColSelect" style="width:100%;padding:8px;background:#0f1115;color:var(--text);border:1px solid var(--border);border-radius:8px;"></select>
+        </div>
+        <div style="flex:1;">
+          <label class="sub">날짜 컬럼 (선택)</label>
+          <select id="dateColSelect" style="width:100%;padding:8px;background:#0f1115;color:var(--text);border:1px solid var(--border);border-radius:8px;"></select>
+        </div>
+      </div>
+      <table style="margin-top:12px;">
+        <thead><tr id="previewHeaderRow"></tr></thead>
+        <tbody id="previewBodyRows"></tbody>
+      </table>
+      <button style="margin-top:12px;" onclick="confirmImport()">이 매핑으로 저장하기 (<span id="totalRowsLabel">0</span>건)</button>
+    </div>
+  </div>
+
+  <div class="card" id="unmatchedCard" style="display:none;">
+    <h2 style="font-size:15px;margin:0 0 8px;">⚠️ 매칭 안 된 판매건</h2>
+    <p class="sub" style="margin:0 0 12px;">상품명이 어느 링크와도 충분히 비슷하지 않아서 자동 매칭이 안 됐어요. 직접 연결해주세요.</p>
+    <table>
+      <thead><tr><th>상품명</th><th>금액</th><th>날짜</th><th>연결할 링크</th></tr></thead>
+      <tbody id="unmatchedBody"></tbody>
+    </table>
+  </div>
+
+  <div class="card">
     <table>
       <thead>
         <tr>
@@ -94,6 +136,7 @@
           <th>단축 링크</th>
           <th>생성일</th>
           <th>클릭수</th>
+          <th>매출</th>
           <th></th>
         </tr>
       </thead>
@@ -105,6 +148,8 @@
 
 <script>
 const API = "/api/links";
+
+let lastAllRows = null; // 미리보기에서 받은 전체 원본 행 (확정 시 재사용)
 
 async function loadLinks() {
   const res = await fetch(API);
@@ -127,6 +172,7 @@ async function loadLinks() {
       <td><code>${shortUrl}</code></td>
       <td>${l.createdAt.slice(0, 10)}</td>
       <td class="clicks">${l.clickCount}건</td>
+      <td class="clicks">${Number(l.revenue || 0).toLocaleString()}원</td>
       <td>
         <button class="ghost" onclick="copyLink('${shortUrl}')">복사</button>
         <button class="danger" onclick="deleteLink('${l.code}')">삭제</button>
@@ -134,6 +180,151 @@ async function loadLinks() {
     `;
     tbody.appendChild(tr);
   }
+}
+
+async function loadUnmatched() {
+  const res = await fetch("/api/sales/summary");
+  if (!res.ok) return;
+  const { unmatched } = await res.json();
+
+  const card = document.getElementById("unmatchedCard");
+  const body = document.getElementById("unmatchedBody");
+  body.innerHTML = "";
+
+  if (!unmatched || unmatched.length === 0) {
+    card.style.display = "none";
+    return;
+  }
+  card.style.display = "block";
+
+  const linksRes = await fetch(API);
+  const links = await linksRes.json();
+  const options = links.map((l) => `<option value="${l.code}">${escapeHtml(l.label)}</option>`).join("");
+
+  for (const s of unmatched) {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td>${escapeHtml(s.productName)}</td>
+      <td>${Number(s.amount).toLocaleString()}원</td>
+      <td>${s.saleDate ? String(s.saleDate).slice(0, 10) : "-"}</td>
+      <td>
+        <select id="assign-${s.id}"><option value="">선택</option>${options}</select>
+        <button class="ghost" onclick="assignSale(${s.id})">연결</button>
+      </td>
+    `;
+    body.appendChild(tr);
+  }
+}
+
+async function assignSale(saleId) {
+  const code = document.getElementById(`assign-${saleId}`).value;
+  if (!code) return alert("연결할 링크를 선택해주세요.");
+  await fetch(`/api/sales/${saleId}/assign`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ code }),
+  });
+  loadUnmatched();
+  loadLinks();
+}
+
+async function previewExcel() {
+  const fileInput = document.getElementById("excelFile");
+  const msg = document.getElementById("uploadMsg");
+  msg.textContent = "";
+  msg.className = "msg";
+
+  if (!fileInput.files[0]) {
+    msg.textContent = "엑셀 파일을 선택해주세요.";
+    msg.classList.add("error");
+    return;
+  }
+
+  const formData = new FormData();
+  formData.append("file", fileInput.files[0]);
+
+  msg.textContent = "업로드 중...";
+
+  const res = await fetch("/api/sales/preview", { method: "POST", body: formData });
+  const data = await res.json();
+
+  if (!res.ok) {
+    msg.textContent = data.error || "업로드 실패";
+    msg.classList.add("error");
+    return;
+  }
+
+  msg.textContent = `${data.totalRows}건 확인됨. 아래에서 컬럼을 지정해주세요.`;
+  msg.classList.add("ok");
+
+  lastAllRows = data.allRows;
+  document.getElementById("totalRowsLabel").textContent = data.totalRows;
+
+  const fillSelect = (id, includeEmpty) => {
+    const sel = document.getElementById(id);
+    sel.innerHTML = (includeEmpty ? `<option value="">(선택 안 함)</option>` : "") +
+      data.headers.map((h, i) => `<option value="${i}">${escapeHtml(h)}</option>`).join("");
+  };
+  fillSelect("productColSelect", false);
+  fillSelect("amountColSelect", false);
+  fillSelect("dateColSelect", true);
+
+  // 자동 추측: 헤더 이름에 "상품"/"금액"/"날짜" 등이 들어있으면 미리 선택해줌
+  const guess = (keywords) => data.headers.findIndex((h) => keywords.some((k) => h.includes(k)));
+  const productGuess = guess(["상품명", "상품"]);
+  const amountGuess = guess(["정산금액", "금액", "수익"]);
+  const dateGuess = guess(["날짜", "종료일", "일시"]);
+  if (productGuess >= 0) document.getElementById("productColSelect").value = productGuess;
+  if (amountGuess >= 0) document.getElementById("amountColSelect").value = amountGuess;
+  if (dateGuess >= 0) document.getElementById("dateColSelect").value = dateGuess;
+
+  const headerRow = document.getElementById("previewHeaderRow");
+  headerRow.innerHTML = data.headers.map((h) => `<th>${escapeHtml(h)}</th>`).join("");
+  const bodyRows = document.getElementById("previewBodyRows");
+  bodyRows.innerHTML = data.sampleRows
+    .map((row) => `<tr>${row.map((c) => `<td>${escapeHtml(String(c ?? ""))}</td>`).join("")}</tr>`)
+    .join("");
+
+  document.getElementById("mappingSection").style.display = "block";
+}
+
+async function confirmImport() {
+  const productCol = document.getElementById("productColSelect").value;
+  const amountCol = document.getElementById("amountColSelect").value;
+  const dateCol = document.getElementById("dateColSelect").value;
+  const msg = document.getElementById("uploadMsg");
+
+  if (productCol === "" || amountCol === "") {
+    msg.textContent = "상품명/금액 컬럼은 반드시 선택해야 해요.";
+    msg.classList.add("error");
+    return;
+  }
+
+  const res = await fetch("/api/sales/confirm", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      rows: lastAllRows,
+      productCol: Number(productCol),
+      amountCol: Number(amountCol),
+      dateCol: dateCol === "" ? undefined : Number(dateCol),
+    }),
+  });
+  const data = await res.json();
+
+  if (!res.ok) {
+    msg.textContent = data.error || "저장 실패";
+    msg.classList.add("error");
+    return;
+  }
+
+  msg.textContent = `저장 완료! 총 ${data.total}건 중 ${data.matched}건 자동 매칭, ${data.unmatched}건은 수동 확인 필요해요.`;
+  msg.classList.add("ok");
+  document.getElementById("mappingSection").style.display = "none";
+  document.getElementById("excelFile").value = "";
+
+  loadLinks();
+  loadUnmatched();
 }
 
 async function createLink() {
@@ -186,6 +377,7 @@ function escapeHtml(str) {
 }
 
 loadLinks();
+loadUnmatched();
 </script>
 </body>
 </html>

@@ -13,6 +13,8 @@
   "dependencies": {
     "@supabase/supabase-js": "^2.110.8",
     "express": "^5.2.1",
-    "nanoid": "^3.3.16"
+    "multer": "^2.2.0",
+    "nanoid": "^3.3.16",
+    "read-excel-file": "^9.3.4"
   }
 }
