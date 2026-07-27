@@ -190,6 +190,47 @@ app.post("/api/links", async (req, res) => {
   }
 });
 
+// ---------- 여러 링크 한 번에 등록 (한 줄에 "URL, 라벨" 형식) ----------
+app.post("/api/links/bulk", async (req, res) => {
+  const { items } = req.body; // [{ targetUrl, label }, ...]
+
+  if (!Array.isArray(items) || items.length === 0) {
+    return res.status(400).json({ error: "등록할 항목이 없어요." });
+  }
+
+  const results = [];
+
+  for (const item of items) {
+    const targetUrl = (item.targetUrl || "").trim();
+    const label = (item.label || "").trim();
+
+    if (!targetUrl || !/^https?:\/\//.test(targetUrl)) {
+      results.push({ ok: false, input: item, error: "올바르지 않은 URL" });
+      continue;
+    }
+
+    try {
+      const code = nanoid(7);
+      await db.createLink({ code, label: label || "(라벨 없음)", targetUrl });
+      results.push({
+        ok: true,
+        label,
+        code,
+        shortUrl: `${req.protocol}://${req.get("host")}/r/${code}`,
+      });
+    } catch (err) {
+      results.push({ ok: false, input: item, error: err.message });
+    }
+  }
+
+  res.json({
+    total: items.length,
+    success: results.filter((r) => r.ok).length,
+    failed: results.filter((r) => !r.ok).length,
+    results,
+  });
+});
+
 // ---------- 링크 삭제 ----------
 app.delete("/api/links/:code", async (req, res) => {
   try {
