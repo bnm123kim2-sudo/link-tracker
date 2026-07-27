@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<title>내 링크 트래커</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<style>
+  :root {
+    --bg: #0f1115;
+    --card: #171a21;
+    --border: #262b36;
+    --text: #e8eaed;
+    --muted: #8b93a3;
+    --accent: #2dd4bf;
+    --danger: #f87171;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, "Pretendard", "Malgun Gothic", sans-serif;
+    padding: 32px 20px;
+  }
+  .wrap { max-width: 900px; margin: 0 auto; display: flex; flex-direction: column; gap: 24px; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  .sub { color: var(--muted); font-size: 13px; margin: 0 0 16px; }
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px;
+  }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; }
+  input {
+    flex: 1;
+    min-width: 200px;
+    background: #0f1115;
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 10px 12px;
+    border-radius: 8px;
+    font-size: 14px;
+  }
+  button {
+    background: var(--accent);
+    color: #06201d;
+    border: none;
+    padding: 10px 16px;
+    border-radius: 8px;
+    font-weight: 600;
+    cursor: pointer;
+    font-size: 14px;
+  }
+  button.ghost {
+    background: transparent;
+    color: var(--muted);
+    border: 1px solid var(--border);
+    font-weight: 500;
+  }
+  button.danger { background: transparent; color: var(--danger); border: 1px solid #4a2a2a; }
+  table { width: 100%; border-collapse: collapse; margin-top: 12px; font-size: 14px; }
+  th, td { text-align: left; padding: 10px 8px; border-bottom: 1px solid var(--border); }
+  th { color: var(--muted); font-weight: 500; font-size: 12px; text-transform: uppercase; }
+  .clicks { color: var(--accent); font-weight: 700; }
+  .empty { color: var(--muted); text-align: center; padding: 24px; }
+  code { background: #0f1115; padding: 2px 6px; border-radius: 4px; font-size: 13px; }
+  .msg { font-size: 13px; margin-top: 8px; }
+  .msg.error { color: var(--danger); }
+  .msg.ok { color: var(--accent); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div>
+    <h1>🔗 내 링크 만들기</h1>
+    <p class="sub">여기서 만든 링크는 라벨(글 제목)로 클릭수가 잡혀요. 실제 구매 여부는 마이리얼트립 파트너스에서 별도로 확인하세요.</p>
+  </div>
+
+  <div class="card">
+    <div class="row">
+      <input id="targetUrl" placeholder="마이리얼트립 상품 URL 또는 이미 변환된 CPA 링크 붙여넣기" />
+      <input id="label" placeholder="라벨 (예: 오사카 유니버셜 글)" />
+      <button onclick="createLink()">만들기</button>
+    </div>
+    <div id="formMsg" class="msg"></div>
+  </div>
+
+  <div class="card">
+    <table>
+      <thead>
+        <tr>
+          <th>라벨</th>
+          <th>단축 링크</th>
+          <th>생성일</th>
+          <th>클릭수</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody id="tbody"></tbody>
+    </table>
+    <div id="emptyMsg" class="empty" style="display:none;">아직 만든 링크가 없어요.</div>
+  </div>
+</div>
+
+<script>
+const API = "/api/links";
+
+async function loadLinks() {
+  const res = await fetch(API);
+  const links = await res.json();
+  const tbody = document.getElementById("tbody");
+  const emptyMsg = document.getElementById("emptyMsg");
+  tbody.innerHTML = "";
+
+  if (links.length === 0) {
+    emptyMsg.style.display = "block";
+    return;
+  }
+  emptyMsg.style.display = "none";
+
+  for (const l of links) {
+    const shortUrl = `${window.location.origin}/r/${l.code}`;
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td>${escapeHtml(l.label)}</td>
+      <td><code>${shortUrl}</code></td>
+      <td>${l.createdAt.slice(0, 10)}</td>
+      <td class="clicks">${l.clickCount}건</td>
+      <td>
+        <button class="ghost" onclick="copyLink('${shortUrl}')">복사</button>
+        <button class="danger" onclick="deleteLink('${l.code}')">삭제</button>
+      </td>
+    `;
+    tbody.appendChild(tr);
+  }
+}
+
+async function createLink() {
+  const targetUrl = document.getElementById("targetUrl").value.trim();
+  const label = document.getElementById("label").value.trim();
+  const msg = document.getElementById("formMsg");
+  msg.textContent = "";
+  msg.className = "msg";
+
+  if (!targetUrl) {
+    msg.textContent = "URL을 입력해주세요.";
+    msg.classList.add("error");
+    return;
+  }
+
+  const res = await fetch(API, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ targetUrl, label }),
+  });
+  const data = await res.json();
+
+  if (!res.ok) {
+    msg.textContent = data.error || "생성 실패";
+    msg.classList.add("error");
+    return;
+  }
+
+  msg.textContent = "링크가 생성됐어요!";
+  msg.classList.add("ok");
+  document.getElementById("targetUrl").value = "";
+  document.getElementById("label").value = "";
+  loadLinks();
+}
+
+async function deleteLink(code) {
+  if (!confirm("이 링크를 삭제할까요? 클릭 기록도 함께 사라져요.")) return;
+  await fetch(`${API}/${code}`, { method: "DELETE" });
+  loadLinks();
+}
+
+function copyLink(url) {
+  navigator.clipboard.writeText(url);
+}
+
+function escapeHtml(str) {
+  const div = document.createElement("div");
+  div.textContent = str;
+  return div.innerHTML;
+}
+
+loadLinks();
+</script>
+</body>
+</html>
