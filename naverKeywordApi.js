@@ -7,7 +7,7 @@
 
 const crypto = require("crypto");
 
-const AD_API_BASE = "https://api.naver.com";
+const AD_API_BASE = "https://api.searchad.naver.com";
 const OPEN_API_BASE = "https://openapi.naver.com";
 
 function getEnv(name) {
