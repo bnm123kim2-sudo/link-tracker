@@ -14,6 +14,7 @@ const multer = require("multer");
 const readXlsxFile = require("read-excel-file/node");
 const { nanoid } = require("nanoid");
 const db = require("./db");
+const { analyzeKeywords, fetchRelatedCandidates } = require("./naverKeywordApi");
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
 
@@ -156,6 +157,35 @@ app.post("/api/sales/:saleId/assign", async (req, res) => {
   } catch (err) {
     console.error("수동 매칭 실패:", err.message);
     res.status(500).json({ error: "매칭에 실패했어요." });
+  }
+});
+
+// ---------- 메인/서브 키워드 자동 분석 ----------
+// seedKeyword 하나만 주면 연관 키워드까지 뽑아서 검색량/발행량/경쟁지수를 계산.
+// keywords 배열을 직접 주면 그 목록만 계산 (연관어 추천 없이).
+app.post("/api/keywords/analyze", async (req, res) => {
+  const { seedKeyword, keywords } = req.body;
+
+  try {
+    let candidateList;
+    if (Array.isArray(keywords) && keywords.length > 0) {
+      candidateList = keywords;
+    } else if (seedKeyword && seedKeyword.trim()) {
+      candidateList = await fetchRelatedCandidates(seedKeyword.trim());
+    } else {
+      return res.status(400).json({ error: "seedKeyword 또는 keywords 배열 중 하나는 필요해요." });
+    }
+
+    const results = await analyzeKeywords(candidateList);
+    res.json({ results });
+  } catch (err) {
+    console.error("키워드 분석 실패:", err.message);
+    if (err.missingEnv) {
+      return res.status(500).json({
+        error: `${err.missingEnv} 환경변수가 없어요. Render 환경변수에 네이버 API 키 5개를 먼저 등록해주세요.`,
+      });
+    }
+    res.status(500).json({ error: err.message || "키워드 분석에 실패했어요." });
   }
 });
 

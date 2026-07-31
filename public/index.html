@@ -78,6 +78,25 @@
   </div>
 
   <div class="card">
+    <h2 style="font-size:15px;margin:0 0 8px;">🔑 메인/서브 키워드 자동 분석</h2>
+    <p class="sub" style="margin:0 0 12px;">시드 키워드 하나만 넣으면 연관 키워드까지 뽑아서 검색량·발행량·경쟁지수를 자동 계산해요. 경쟁지수(발행량÷검색량)는 낮을수록 유리하고, 황금구간(1:3~1:7)은 초록색 배경 + ✅로 표시돼요. 실제 상품 내용과 맞는지는 직접 확인 후 "메인/서브"로 선택해주세요.</p>
+    <div class="row">
+      <input id="seedKeyword" placeholder="시드 키워드 (예: 삿포로 비에이 버스투어)" />
+      <button onclick="runKeywordAnalysis()">분석하기</button>
+    </div>
+    <p class="sub" style="margin:8px 0 0;">또는 후보를 이미 정해뒀다면 쉼표로 구분해서 직접 입력 (이 경우 연관어 자동 추천은 건너뜀):</p>
+    <input id="manualKeywords" placeholder="비에이투어, 삿포로여름여행, 청의호수" style="margin-top:6px;width:100%;" />
+    <div id="keywordMsg" class="msg"></div>
+    <div id="keywordResultWrap" style="display:none;margin-top:12px;">
+      <table>
+        <thead><tr><th>키워드</th><th>검색량</th><th>발행량</th><th>경쟁지수</th><th>황금구간</th><th>선택</th></tr></thead>
+        <tbody id="keywordResultBody"></tbody>
+      </table>
+    </div>
+    <div id="keywordSelectionSummary" class="msg ok" style="display:none;margin-top:12px;"></div>
+  </div>
+
+  <div class="card">
     <div class="row">
       <input id="targetUrl" placeholder="마이리얼트립 상품 URL 또는 이미 변환된 CPA 링크 붙여넣기" />
       <input id="label" placeholder="라벨 (예: 오사카 유니버셜 글)" />
@@ -459,6 +478,100 @@ function escapeHtml(str) {
   div.textContent = str;
   return div.innerHTML;
 }
+
+// ---------- 키워드 자동 분석 ----------
+let selectedMainKeyword = null;
+let selectedSubKeywords = [];
+
+async function runKeywordAnalysis() {
+  const seedKeyword = document.getElementById("seedKeyword").value.trim();
+  const manualRaw = document.getElementById("manualKeywords").value.trim();
+  const msg = document.getElementById("keywordMsg");
+  msg.textContent = "";
+  msg.className = "msg";
+
+  let body;
+  if (manualRaw) {
+    const keywords = manualRaw.split(",").map((k) => k.trim()).filter(Boolean);
+    body = { keywords };
+  } else if (seedKeyword) {
+    body = { seedKeyword };
+  } else {
+    msg.textContent = "시드 키워드나 직접 키워드 목록 중 하나는 입력해주세요.";
+    msg.classList.add("error");
+    return;
+  }
+
+  msg.textContent = "분석 중이에요... (연관 키워드가 많으면 시간이 좀 걸려요)";
+
+  try {
+    const res = await fetch("/api/keywords/analyze", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const data = await res.json();
+
+    if (!res.ok) {
+      msg.textContent = data.error || "분석 실패";
+      msg.classList.add("error");
+      return;
+    }
+
+    msg.textContent = `${data.results.length}개 키워드 분석 완료! 실제 상품 내용과 맞는 것만 골라서 선택하세요.`;
+    msg.classList.add("ok");
+
+    selectedMainKeyword = null;
+    selectedSubKeywords = [];
+    document.getElementById("keywordSelectionSummary").style.display = "none";
+    renderKeywordResults(data.results);
+  } catch (err) {
+    msg.textContent = "요청 중 오류가 발생했어요. 서버 로그를 확인해주세요.";
+    msg.classList.add("error");
+  }
+}
+
+function renderKeywordResults(results) {
+  const wrap = document.getElementById("keywordResultWrap");
+  const body = document.getElementById("keywordResultBody");
+  body.innerHTML = "";
+  wrap.style.display = "block";
+
+  for (const r of results) {
+    const tr = document.createElement("tr");
+    if (r.isGoldenZone) tr.style.background = "rgba(45,212,191,0.08)";
+    const indexLabel = r.competitiveIndex === null ? "-" : r.competitiveIndex.toFixed(2);
+    const postLabel = r.postCount === null ? "조회실패" : r.postCount.toLocaleString();
+    tr.innerHTML = `
+      <td>${escapeHtml(r.keyword)}</td>
+      <td>${r.searchVolume.toLocaleString()}</td>
+      <td>${postLabel}</td>
+      <td>${indexLabel}</td>
+      <td>${r.isGoldenZone ? "✅" : ""}</td>
+      <td>
+        <button class="ghost" data-action="main" data-keyword="${escapeHtml(r.keyword)}">메인</button>
+        <button class="ghost" data-action="sub" data-keyword="${escapeHtml(r.keyword)}">서브</button>
+      </td>
+    `;
+    body.appendChild(tr);
+  }
+}
+
+document.getElementById("keywordResultBody").addEventListener("click", (e) => {
+  const btn = e.target.closest("button[data-action]");
+  if (!btn) return;
+  const keyword = btn.dataset.keyword;
+
+  if (btn.dataset.action === "main") {
+    selectedMainKeyword = keyword;
+  } else if (btn.dataset.action === "sub") {
+    if (!selectedSubKeywords.includes(keyword)) selectedSubKeywords.push(keyword);
+  }
+
+  const summary = document.getElementById("keywordSelectionSummary");
+  summary.style.display = "block";
+  summary.textContent = `메인 키워드: ${selectedMainKeyword || "(미선택)"} / 서브 키워드: ${selectedSubKeywords.join(", ") || "(미선택)"}`;
+});
 
 loadLinks();
 loadUnmatched();
