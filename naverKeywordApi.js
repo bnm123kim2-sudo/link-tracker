@@ -17,7 +17,8 @@ function getEnv(name) {
     err.missingEnv = name;
     throw err;
   }
-  return v;
+  // Render 환경변수 입력 시 앞뒤로 공백/줄바꿈이 실수로 붙는 경우가 많아서 방어적으로 제거
+  return v.trim();
 }
 
 function generateSignature(timestamp, method, uri, secretKey) {

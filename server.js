@@ -160,6 +160,35 @@ app.post("/api/sales/:saleId/assign", async (req, res) => {
   }
 });
 
+// ---------- 환경변수 진단(디버그): 값 전체는 안 보여주고 길이/앞뒤 일부만 확인 ----------
+app.get("/api/keywords/debug-env", (req, res) => {
+  const names = [
+    "NAVER_AD_API_KEY",
+    "NAVER_AD_SECRET_KEY",
+    "NAVER_AD_CUSTOMER_ID",
+    "NAVER_CLIENT_ID",
+    "NAVER_CLIENT_SECRET",
+  ];
+
+  const result = {};
+  for (const name of names) {
+    const raw = process.env[name];
+    if (!raw) {
+      result[name] = { set: false };
+      continue;
+    }
+    result[name] = {
+      set: true,
+      length: raw.length,
+      trimmedLength: raw.trim().length,
+      hasWhitespace: raw.length !== raw.trim().length,
+      preview: `${raw.slice(0, 3)}...${raw.slice(-3)}`,
+    };
+  }
+
+  res.json(result);
+});
+
 // ---------- 메인/서브 키워드 자동 분석 ----------
 // seedKeyword 하나만 주면 연관 키워드까지 뽑아서 검색량/발행량/경쟁지수를 계산.
 // keywords 배열을 직접 주면 그 목록만 계산 (연관어 추천 없이).
