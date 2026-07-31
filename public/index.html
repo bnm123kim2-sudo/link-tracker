@@ -68,6 +68,13 @@
   .msg { font-size: 13px; margin-top: 8px; }
   .msg.error { color: var(--danger); }
   .msg.ok { color: var(--accent); }
+  .badge { display:inline-block; padding:3px 8px; border-radius:6px; font-size:12px; font-weight:600; white-space:nowrap; }
+  .badge-ultra { background:rgba(45,212,191,0.25); color:#5eead4; }
+  .badge-gold { background:rgba(45,212,191,0.18); color:var(--accent); }
+  .badge-good { background:rgba(96,165,250,0.18); color:#93c5fd; }
+  .badge-normal { background:rgba(250,204,21,0.15); color:#fde047; }
+  .badge-red { background:rgba(248,113,113,0.15); color:var(--danger); }
+  .badge-unknown { background:rgba(139,147,163,0.15); color:var(--muted); }
 </style>
 </head>
 <body>
@@ -79,7 +86,7 @@
 
   <div class="card">
     <h2 style="font-size:15px;margin:0 0 8px;">🔑 메인/서브 키워드 자동 분석</h2>
-    <p class="sub" style="margin:0 0 12px;">시드 키워드 하나만 넣으면 연관 키워드까지 뽑아서 검색량·발행량·경쟁지수를 자동 계산해요. 경쟁지수(발행량÷검색량)는 낮을수록 유리하고, 황금구간(1:3~1:7)은 초록색 배경 + ✅로 표시돼요. 실제 상품 내용과 맞는지는 직접 확인 후 "메인/서브"로 선택해주세요.</p>
+    <p class="sub" style="margin:0 0 12px;">시드 키워드 하나만 넣으면 연관 키워드까지 뽑아서 검색량·발행량·경쟁지수를 자동 계산해요. 경쟁지수(발행량÷검색량)는 낮을수록 유리하고, 등급을 자동으로 매겨드려요: <b style="color:#5eead4;">초저경쟁</b>(0.14 미만) → <b style="color:var(--accent);">골드</b>(0.14~0.33, 황금구간) → <b style="color:#93c5fd;">양호</b>(0.33~1.0) → <b style="color:#fde047;">보통</b>(1.0~3.0) → <b style="color:var(--danger);">레드오션</b>(3.0 초과). 실제 상품 내용과 맞는지는 직접 확인 후 "메인/서브"로 선택해주세요.</p>
     <div class="row">
       <input id="seedKeyword" placeholder="시드 키워드 (예: 삿포로 비에이 버스투어)" />
       <button onclick="runKeywordAnalysis()">분석하기</button>
@@ -90,7 +97,7 @@
     <div id="keywordSelectionSummary" class="msg ok" style="display:none;margin-top:12px;position:sticky;top:8px;z-index:5;background:var(--card);border:1px solid var(--accent);border-radius:8px;padding:10px 12px;"></div>
     <div id="keywordResultWrap" style="display:none;margin-top:12px;">
       <table>
-        <thead><tr><th>키워드</th><th>검색량</th><th>발행량</th><th>경쟁지수</th><th>황금구간</th><th>선택</th></tr></thead>
+        <thead><tr><th>키워드</th><th>검색량</th><th>발행량</th><th>경쟁지수</th><th>등급</th><th>선택</th></tr></thead>
         <tbody id="keywordResultBody"></tbody>
       </table>
     </div>
@@ -539,7 +546,12 @@ function renderKeywordResults(results) {
 
   for (const r of results) {
     const tr = document.createElement("tr");
-    if (r.isGoldenZone) tr.style.background = "rgba(45,212,191,0.08)";
+    const rowTint = {
+      ultra: "rgba(45,212,191,0.10)",
+      gold: "rgba(45,212,191,0.08)",
+      good: "rgba(96,165,250,0.06)",
+    }[r.grade];
+    if (rowTint) tr.style.background = rowTint;
     const indexLabel = r.competitiveIndex === null ? "-" : r.competitiveIndex.toFixed(2);
     const postLabel = r.postCount === null ? "조회실패" : r.postCount.toLocaleString();
     tr.innerHTML = `
@@ -547,7 +559,7 @@ function renderKeywordResults(results) {
       <td>${r.searchVolume.toLocaleString()}</td>
       <td>${postLabel}</td>
       <td>${indexLabel}</td>
-      <td>${r.isGoldenZone ? "✅" : ""}</td>
+      <td><span class="badge badge-${r.grade}">${escapeHtml(r.gradeLabel)}</span></td>
       <td>
         <button class="ghost" data-action="main" data-keyword="${escapeHtml(r.keyword)}">메인</button>
         <button class="ghost" data-action="sub" data-keyword="${escapeHtml(r.keyword)}">서브</button>

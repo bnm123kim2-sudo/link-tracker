@@ -34,6 +34,15 @@ function parseCount(value) {
   return Number.isNaN(n) ? 0 : n;
 }
 
+// 경쟁지수 구간에 따라 등급을 매김 (선생님 기준: 낮을수록 유리)
+function gradeFromIndex(competitiveIndex) {
+  if (competitiveIndex === null) return { grade: "unknown", label: "조회불가" };
+  if (competitiveIndex < 1 / 7) return { grade: "ultra", label: "초저경쟁" };
+  if (competitiveIndex <= 1 / 3) return { grade: "gold", label: "골드" };
+  if (competitiveIndex <= 1.0) return { grade: "good", label: "양호" };
+  if (competitiveIndex <= 3.0) return { grade: "normal", label: "보통" };
+  return { grade: "red", label: "레드오션" };
+}
 function chunk(arr, size) {
   const out = [];
   for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
@@ -154,7 +163,9 @@ async function analyzeKeywords(keywords) {
       isGoldenZone = competitiveIndex >= 1 / 7 && competitiveIndex <= 1 / 3;
     }
 
-    results.push({ keyword, searchVolume, postCount, competitiveIndex, isGoldenZone });
+    const { grade, label: gradeLabel } = gradeFromIndex(competitiveIndex);
+
+    results.push({ keyword, searchVolume, postCount, competitiveIndex, isGoldenZone, grade, gradeLabel });
   }
 
   // 경쟁지수 낮은 순(유리한 순) 정렬. 계산 불가한 항목은 맨 뒤로.
