@@ -168,4 +168,41 @@ async function analyzeKeywords(keywords) {
   return results;
 }
 
-module.exports = { analyzeKeywords, fetchRelatedCandidates };
+// ---------- 디버깅용: 서명 요청 내역 + 응답 전체를 그대로 확인 ----------
+async function debugSignatureTest(testKeyword) {
+  const API_KEY = getEnv("NAVER_AD_API_KEY");
+  const SECRET_KEY = getEnv("NAVER_AD_SECRET_KEY");
+  const CUSTOMER_ID = getEnv("NAVER_AD_CUSTOMER_ID");
+
+  const uri = "/keywordstool";
+  const method = "GET";
+  const timestamp = Date.now().toString();
+  const message = `${timestamp}.${method}.${uri}`;
+  const signature = generateSignature(timestamp, method, uri, SECRET_KEY);
+
+  const url = `${AD_API_BASE}${uri}?hintKeywords=${encodeURIComponent(testKeyword)}&showDetail=1`;
+
+  const res = await fetch(url, {
+    headers: {
+      "X-Timestamp": timestamp,
+      "X-API-KEY": API_KEY,
+      "X-Customer": CUSTOMER_ID,
+      "X-Signature": signature,
+    },
+  });
+
+  const bodyText = await res.text();
+
+  return {
+    serverTimeISO: new Date().toISOString(),
+    requestedUrl: url,
+    message, // 타임스탬프+메서드+uri 조합, 비밀값 아님
+    signaturePreview: `${signature.slice(0, 6)}...${signature.slice(-6)}`,
+    customerIdUsed: CUSTOMER_ID,
+    apiKeyPreview: `${API_KEY.slice(0, 6)}...${API_KEY.slice(-6)}`,
+    upstreamStatus: res.status,
+    upstreamBody: bodyText,
+  };
+}
+
+module.exports = { analyzeKeywords, fetchRelatedCandidates, debugSignatureTest };

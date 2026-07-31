@@ -14,7 +14,7 @@ const multer = require("multer");
 const readXlsxFile = require("read-excel-file/node");
 const { nanoid } = require("nanoid");
 const db = require("./db");
-const { analyzeKeywords, fetchRelatedCandidates } = require("./naverKeywordApi");
+const { analyzeKeywords, fetchRelatedCandidates, debugSignatureTest } = require("./naverKeywordApi");
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
 
@@ -187,6 +187,19 @@ app.get("/api/keywords/debug-env", (req, res) => {
   }
 
   res.json(result);
+});
+
+// ---------- 디버깅용: 서명 요청 세부내역 + 서버 응답 전체 확인 ----------
+app.get("/api/keywords/debug-signature", async (req, res) => {
+  try {
+    const result = await debugSignatureTest("테스트");
+    res.json(result);
+  } catch (err) {
+    if (err.missingEnv) {
+      return res.status(500).json({ error: `${err.missingEnv} 환경변수가 없어요.` });
+    }
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // ---------- 메인/서브 키워드 자동 분석 ----------
