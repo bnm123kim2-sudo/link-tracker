@@ -205,4 +205,27 @@ async function debugSignatureTest(testKeyword) {
   };
 }
 
-module.exports = { analyzeKeywords, fetchRelatedCandidates, debugSignatureTest };
+// ---------- 디버깅용: 블로그 검색 API 요청/응답 전체 확인 ----------
+async function debugBlogTest(testKeyword) {
+  const CLIENT_ID = getEnv("NAVER_CLIENT_ID");
+  const CLIENT_SECRET = getEnv("NAVER_CLIENT_SECRET");
+
+  const url = `${OPEN_API_BASE}/v1/search/blog.json?query=${encodeURIComponent(testKeyword)}&display=1`;
+  const res = await fetch(url, {
+    headers: {
+      "X-Naver-Client-Id": CLIENT_ID,
+      "X-Naver-Client-Secret": CLIENT_SECRET,
+    },
+  });
+
+  const bodyText = await res.text();
+
+  return {
+    requestedUrl: url,
+    clientIdPreview: `${CLIENT_ID.slice(0, 3)}...${CLIENT_ID.slice(-3)}`,
+    upstreamStatus: res.status,
+    upstreamBody: bodyText,
+  };
+}
+
+module.exports = { analyzeKeywords, fetchRelatedCandidates, debugSignatureTest, debugBlogTest };
