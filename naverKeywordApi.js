@@ -8,7 +8,7 @@
 const crypto = require("crypto");
 
 const AD_API_BASE = "https://api.searchad.naver.com";
-const OPEN_API_BASE = "https://openapi.naver.com";
+const OPEN_API_BASE = "https://naverapihub.apigw.ntruss.com";
 
 function getEnv(name) {
   const v = process.env[name];
@@ -77,11 +77,11 @@ async function fetchBlogPostCount(keyword) {
   const CLIENT_ID = getEnv("NAVER_CLIENT_ID");
   const CLIENT_SECRET = getEnv("NAVER_CLIENT_SECRET");
 
-  const url = `${OPEN_API_BASE}/v1/search/blog.json?query=${encodeURIComponent(keyword)}&display=1`;
+  const url = `${OPEN_API_BASE}/search/v1/blog?query=${encodeURIComponent(keyword)}&display=1`;
   const res = await fetch(url, {
     headers: {
-      "X-Naver-Client-Id": CLIENT_ID,
-      "X-Naver-Client-Secret": CLIENT_SECRET,
+      "X-NCP-APIGW-API-KEY-ID": CLIENT_ID,
+      "X-NCP-APIGW-API-KEY": CLIENT_SECRET,
     },
   });
 
@@ -210,11 +210,11 @@ async function debugBlogTest(testKeyword) {
   const CLIENT_ID = getEnv("NAVER_CLIENT_ID");
   const CLIENT_SECRET = getEnv("NAVER_CLIENT_SECRET");
 
-  const url = `${OPEN_API_BASE}/v1/search/blog.json?query=${encodeURIComponent(testKeyword)}&display=1`;
+  const url = `${OPEN_API_BASE}/search/v1/blog?query=${encodeURIComponent(testKeyword)}&display=1`;
   const res = await fetch(url, {
     headers: {
-      "X-Naver-Client-Id": CLIENT_ID,
-      "X-Naver-Client-Secret": CLIENT_SECRET,
+      "X-NCP-APIGW-API-KEY-ID": CLIENT_ID,
+      "X-NCP-APIGW-API-KEY": CLIENT_SECRET,
     },
   });
 
