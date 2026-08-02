@@ -35,12 +35,29 @@ function parseCount(value) {
 }
 
 // 경쟁지수 구간에 따라 등급을 매김 (선생님 기준: 낮을수록 유리)
+// ※ 절대 기준이라 "블루마운틴", "오사카" 같이 오래된 유명 관광지 키워드는
+//   발행량이 몇 년치 누적돼서 전부 레드오션으로 나오는 문제가 있음.
+//   그래서 이건 보조 지표로만 쓰고, 메인 등급은 아래 relativeGradeFromRank로 매김.
 function gradeFromIndex(competitiveIndex) {
   if (competitiveIndex === null) return { grade: "unknown", label: "조회불가" };
   if (competitiveIndex < 1 / 7) return { grade: "ultra", label: "초저경쟁" };
   if (competitiveIndex <= 1 / 3) return { grade: "gold", label: "골드" };
   if (competitiveIndex <= 1.0) return { grade: "good", label: "양호" };
   if (competitiveIndex <= 3.0) return { grade: "normal", label: "보통" };
+  return { grade: "red", label: "레드오션" };
+}
+
+// 이번 분석 배치 안에서의 상대 순위 기준 등급.
+// rank는 0부터 시작(0이 가장 유리), total은 경쟁지수 계산 가능한 키워드 총 개수.
+// 카테고리(국내 소도시 투어 vs 해외 유명 관광지)마다 절대 지수 분포가 완전히 달라서
+// "이번에 뽑은 후보들 중 상대적으로 어디쯤인지"가 실전에서 더 쓸모 있음.
+function relativeGradeFromRank(rank, total) {
+  if (rank === null || total === 0) return { grade: "unknown", label: "조회불가" };
+  const percentile = total <= 1 ? 0 : rank / (total - 1);
+  if (percentile <= 0.2) return { grade: "ultra", label: "초저경쟁" };
+  if (percentile <= 0.4) return { grade: "gold", label: "골드" };
+  if (percentile <= 0.6) return { grade: "good", label: "양호" };
+  if (percentile <= 0.8) return { grade: "normal", label: "보통" };
   return { grade: "red", label: "레드오션" };
 }
 function chunk(arr, size) {
@@ -163,9 +180,18 @@ async function analyzeKeywords(keywords) {
       isGoldenZone = competitiveIndex >= 1 / 7 && competitiveIndex <= 1 / 3;
     }
 
-    const { grade, label: gradeLabel } = gradeFromIndex(competitiveIndex);
+    // absoluteGrade: 기존 절대 기준 (참고용 보조 지표로만 사용)
+    const { grade: absoluteGrade, label: absoluteGradeLabel } = gradeFromIndex(competitiveIndex);
 
-    results.push({ keyword, searchVolume, postCount, competitiveIndex, isGoldenZone, grade, gradeLabel });
+    results.push({
+      keyword,
+      searchVolume,
+      postCount,
+      competitiveIndex,
+      isGoldenZone,
+      absoluteGrade,
+      absoluteGradeLabel,
+    });
   }
 
   // 경쟁지수 낮은 순(유리한 순) 정렬. 계산 불가한 항목은 맨 뒤로.
@@ -175,6 +201,26 @@ async function analyzeKeywords(keywords) {
     if (b.competitiveIndex === null) return -1;
     return a.competitiveIndex - b.competitiveIndex;
   });
+
+  // 상대 등급(이번 배치 안에서의 순위 기준) 부여.
+  // 정렬 후 순서대로 매기되, competitiveIndex가 null인 항목(조회불가)은 순위 계산에서 제외.
+  const validCount = results.filter((r) => r.competitiveIndex !== null).length;
+  let rankCursor = 0;
+  for (const r of results) {
+    if (r.competitiveIndex === null) {
+      r.rank = null;
+      r.totalRanked = validCount;
+      r.grade = "unknown";
+      r.gradeLabel = "조회불가";
+      continue;
+    }
+    const { grade, label: gradeLabel } = relativeGradeFromRank(rankCursor, validCount);
+    r.rank = rankCursor + 1; // 1위부터 표시
+    r.totalRanked = validCount;
+    r.grade = grade; // 메인으로 노출할 등급 = 상대 등급
+    r.gradeLabel = gradeLabel;
+    rankCursor += 1;
+  }
 
   return results;
 }
