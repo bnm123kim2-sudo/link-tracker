@@ -14,7 +14,13 @@ const multer = require("multer");
 const readXlsxFile = require("read-excel-file/node");
 const { nanoid } = require("nanoid");
 const db = require("./db");
-const { analyzeKeywords, fetchRelatedCandidates, debugSignatureTest, debugBlogTest } = require("./naverKeywordApi");
+const {
+  analyzeKeywords,
+  fetchRelatedCandidates,
+  debugSignatureTest,
+  debugBlogTest,
+  DEFAULT_LONGTAIL_SUFFIXES,
+} = require("./naverKeywordApi");
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
 
@@ -218,15 +224,24 @@ app.get("/api/keywords/debug-blog", async (req, res) => {
 // ---------- 메인/서브 키워드 자동 분석 ----------
 // seedKeyword 하나만 주면 연관 키워드까지 뽑아서 검색량/발행량/경쟁지수를 계산.
 // keywords 배열을 직접 주면 그 목록만 계산 (연관어 추천 없이).
+app.get("/api/keywords/longtail-suffixes", (req, res) => {
+  res.json({ suffixes: DEFAULT_LONGTAIL_SUFFIXES });
+});
+
 app.post("/api/keywords/analyze", async (req, res) => {
-  const { seedKeyword, keywords } = req.body;
+  const { seedKeyword, keywords, includeLongtail, longtailSuffixes } = req.body;
 
   try {
     let candidateList;
     if (Array.isArray(keywords) && keywords.length > 0) {
       candidateList = keywords;
     } else if (seedKeyword && seedKeyword.trim()) {
-      candidateList = await fetchRelatedCandidates(seedKeyword.trim());
+      const options = {};
+      if (includeLongtail === false) options.includeLongtail = false;
+      if (Array.isArray(longtailSuffixes) && longtailSuffixes.length > 0) {
+        options.longtailSuffixes = longtailSuffixes;
+      }
+      candidateList = await fetchRelatedCandidates(seedKeyword.trim(), 15, options);
     } else {
       return res.status(400).json({ error: "seedKeyword 또는 keywords 배열 중 하나는 필요해요." });
     }
